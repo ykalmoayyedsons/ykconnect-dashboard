@@ -1,1 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YKA Connect Analytical Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;color:#111;padding:1.5rem}
+.hbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem}
+h1{font-size:20px;font-weight:500}
+.live-badge{font-size:11px;padding:3px 9px;border-radius:20px;background:#EAF3DE;color:#3B6D11;font-weight:500;margin-left:8px}
+.err-badge{font-size:11px;padding:3px 9px;border-radius:20px;background:#FCEBEB;color:#A32D2D;font-weight:500;margin-left:8px}
+.warn-badge{font-size:11px;padding:3px 9px;border-radius:20px;background:#FAEEDA;color:#854F0B;font-weight:500;margin-left:8px}
+.controls{display:flex;gap:8px;align-items:center}
+select,button{font-size:13px;padding:6px 12px;border-radius:8px;border:1px solid #ddd;background:white;cursor:pointer}
+button{color:#378ADD}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:1.25rem}
+.metric{background:white;border-radius:8px;padding:.875rem;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+.metric-label{font-size:12px;color:#666;margin-bottom:5px}
+.metric-value{font-size:22px;font-weight:500}
+.card{background:white;border-radius:12px;padding:1.125rem;margin-bottom:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+.card-title{font-size:13px;font-weight:500;margin-bottom:1rem;color:#111}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem}
+.tab-bar{display:flex;gap:2px;margin-bottom:1.25rem;border-bottom:1px solid #e5e5e5}
+.tab{font-size:13px;padding:8px 16px;cursor:pointer;color:#666;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.active{color:#185FA5;border-bottom-color:#378ADD;font-weight:500}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid #eee;border-top-color:#378ADD;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error-box{background:#FCEBEB;color:#A32D2D;border-radius:8px;padding:12px 16px;font-size:13px;margin-bottom:1rem;line-height:1.6}
+.slist{list-style:none}
+.slist li{display:flex;align-items:center;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px;gap:8px}
+.slist li:last-child{border-bottom:none}
+.sname{flex:0 0 130px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.sbar-bg{flex:1;height:5px;background:#f0f0f0;border-radius:3px}
+.sbar-fill{height:100%;border-radius:3px;background:#378ADD}
+.scount{flex:0 0 50px;text-align:right;color:#666;font-size:12px}
+.legend{display:flex;gap:16px;margin-bottom:10px;font-size:12px;color:#666}
+.legend span{display:flex;align-items:center;gap:4px}
+.ldot{width:10px;height:10px;border-radius:2px;display:inline-block}
+</style>
+</head>
+<body>
+
+<div class="hbar">
+  <div style="display:flex;align-items:center">
+    <h1>YKA Connect Analytical Dashboard</h1>
+    <span id="status-badge" class="warn-badge">● connecting</span>
+  </div>
+  <div class="controls">
+    <select id="date-range" onchange="handleRangeChange()">
+      <option value="7" selected>Last 7 days</option>
+      <option value="28">Last 28 days</option>
+      <option value="90">Last 90 days</option>
+      <option value="custom">Custom range</option>
+    </select>
+    <div id="custom-range" style="display:none;gap:6px;align-items:center;font-size:13px;">
+      <input type="date" id="start-date" style="padding:4px 8px;border-radius:8px;border:1px solid #ddd;font-size:12px;">
+      <span style="color:#666">to</span>
+      <input type="date" id="end-date" style="padding:4px 8px;border-radius:8px;border:1px solid #ddd;font-size:12px;">
+      <button onclick="loadAll()" style="padding:4px 10px;background:#378ADD;color:white;border:none;border-radius:8px;font-size:12px;cursor:pointer;">Apply</button>
+    </div>
+    <button onclick="loadAll()">↻ Refresh</button>
+  </div>
+</div>
+
+<div id="error-area"></div>
+
+<div class="tab-bar">
+  <div class="tab active" onclick="setTab('overview',this)">Overview</div>
+  <div class="tab" onclick="setTab('acquisition',this)">Acquisition</div>
+  <div class="tab" onclick="setTab('engagement',this)">Engagement</div>
+  <div class="tab" onclick="setTab('events',this)">Events</div>
+</div>
+
+<div id="tab-overview">
+  <div class="metric-grid" id="overview-metrics">
+    <div class="metric"><div class="metric-label">Total users</div><div class="metric-value"><span class="spinner"></span></div></div>
+    <div class="metric"><div class="metric-label">New users</div><div class="metric-value">—</div></div>
+    <div class="metric"><div class="metric-label">Sessions</div><div class="metric-value">—</div></div>
+    <div class="metric"><div class="metric-label">Avg session</div><div class="metric-value">—</div></div>
+    <div class="metric"><div class="metric-label">Engaged sessions</div><div class="metric-value">—</div></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Daily active users</div>
+    <div class="legend"><span><span class="ldot" style="background:#378ADD"></span>Active users</span><span><span class="ldot" style="background:#1D9E75"></span>New users</span></div>
+    <div style="position:relative;height:200px"><canvas id="dau-chart"></canvas></div>
+  </div>
+  <div class="grid2">
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title">Platform breakdown</div>
+      <div style="position:relative;height:180px"><canvas id="platform-chart"></canvas></div>
+    </div>
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title">Top screens</div>
+      <ul class="slist" id="screens-list"><li style="color:#666;font-size:13px"><span class="spinner"></span>loading...</li></ul>
+    </div>
+  </div>
+</div>
+
+<div id="tab-acquisition" style="display:none">
+  <div class="card"><div class="card-title">Users by channel</div><div style="position:relative;height:260px"><canvas id="acq-chart"></canvas></div></div>
+  <div class="card"><div class="card-title">Users by country (top 10)</div><div id="country-wrap" style="position:relative;height:300px"><canvas id="country-chart"></canvas></div></div>
+</div>
+
+<div id="tab-engagement" style="display:none">
+  <div class="metric-grid" id="eng-metrics">
+    <div class="metric"><div class="metric-label">Avg session duration</div><div class="metric-value"><span class="spinner"></span></div></div>
+    <div class="metric"><div class="metric-label">Single Touch</div><div class="metric-value">—</div></div>
+    <div class="metric"><div class="metric-label">Engagement rate</div><div class="metric-value">—</div></div>
+  </div>
+  <div class="card"><div class="card-title">Sessions over time</div><div style="position:relative;height:200px"><canvas id="sess-chart"></canvas></div></div>
+  <div class="card">
+    <div class="card-title">Engaged vs single touch sessions</div>
+    <div class="legend"><span><span class="ldot" style="background:#1D9E75"></span>Engaged</span><span><span class="ldot" style="background:#E24B4A"></span>Single Touch</span></div>
+    <div style="position:relative;height:180px"><canvas id="eng-chart"></canvas></div>
+  </div>
+</div>
+
+<div id="tab-events" style="display:none">
+  <div class="card"><div class="card-title">Top events by count</div><div id="events-wrap" style="position:relative;height:320px"><canvas id="events-chart"></canvas></div></div>
+  <div class="card"><div class="card-title">Event counts over time</div><div style="position:relative;height:200px"><canvas id="evt-time-chart"></canvas></div></div>
+</div>
+
+<script>
+const WEBHOOK='https://ykai.app.n8n.cloud/webhook/ga4-proxy-v2';
+let charts={};
+function days(){return parseInt(document.getElementById('date-range').value);}
+function dr(){
+  const sel=document.getElementById('date-range').value;
+  if(sel==='custom'){
+    const s=document.getElementById('start-date').value;
+    const e=document.getElementById('end-date').value;
+    if(s&&e) return{startDate:s,endDate:e};
+  }
+  return{startDate:days()+'daysAgo',endDate:'today'};
+}
+function handleRangeChange(){
+  const sel=document.getElementById('date-range').value;
+  const customDiv=document.getElementById('custom-range');
+  if(sel==='custom'){
+    customDiv.style.display='flex';
+    // set default custom range to last 7 days
+    const today=new Date();
+    const week=new Date();week.setDate(today.getDate()-7);
+    document.getElementById('end-date').value=today.toISOString().split('T')[0];
+    document.getElementById('start-date').value=week.toISOString().split('T')[0];
+  } else {
+    customDiv.style.display='none';
+    loadAll();
+  }
+}
+async function ga4(endpoint,payload){
+  const r=await fetch(WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint,payload})});
+  if(!r.ok){const e=await r.text();throw new Error(e||'HTTP '+r.status);}
+  const data=await r.json();
+  if(data.error)throw new Error(data.error.message||JSON.stringify(data.error));
+  return data;
+}
+function fmt(n){return Math.round(parseFloat(n||0)).toLocaleString();}
+function fmtChannel(name){
+  if(!name || name==='(not set)') return 'Unknown';
+  if(name==='Unassigned') return 'Message Link';
+  return name;
+}
+function fmtScreen(name){
+  if(!name || name==='(not set)' || name.trim()==='') return 'Screen View';
+  return name.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()).trim();
+}
+function fmtEvent(name){
+  if(!name || name==='(not set)') return 'Screen View';
+  return name.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+}
+function fmtSec(s){const m=Math.floor(s/60),sec=Math.round(s%60);return m+'m '+sec+'s';}
+function dc(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
+function setStatus(s){
+  const b=document.getElementById('status-badge');
+  b.className=s==='live'?'live-badge':s==='error'?'err-badge':'warn-badge';
+  b.textContent=s==='live'?'● live':s==='error'?'● error':'● '+s;
+}
+function showErr(msg){document.getElementById('error-area').innerHTML='<div class="error-box"><strong>Error:</strong> '+msg+'</div>';}
+function clearErr(){document.getElementById('error-area').innerHTML='';}
+
+async function loadOverview(){
+  const d=dr();
+  const[summary,daily,platform,screens]=await Promise.all([
+    ga4(':runReport',{dateRanges:[d],metrics:[{name:'totalUsers'},{name:'newUsers'},{name:'sessions'},{name:'averageSessionDuration'},{name:'engagedSessions'}]}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'date'}],metrics:[{name:'activeUsers'},{name:'newUsers'}],orderBys:[{dimension:{dimensionName:'date'}}]}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'platform'}],metrics:[{name:'totalUsers'}],orderBys:[{metric:{metricName:'totalUsers'},desc:true}]}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'unifiedScreenName'}],metrics:[{name:'screenPageViews'}],orderBys:[{metric:{metricName:'screenPageViews'},desc:true}],limit:8})
+  ]);
+  const mv=summary.rows?.[0]?.metricValues||[];
+  document.getElementById('overview-metrics').innerHTML=`
+    <div class="metric"><div class="metric-label">Total users</div><div class="metric-value">${fmt(mv[0]?.value)}</div></div>
+    <div class="metric"><div class="metric-label">New users</div><div class="metric-value">${fmt(mv[1]?.value)}</div></div>
+    <div class="metric"><div class="metric-label">Sessions</div><div class="metric-value">${fmt(mv[2]?.value)}</div></div>
+    <div class="metric"><div class="metric-label">Avg session</div><div class="metric-value">${fmtSec(parseFloat(mv[3]?.value||0))}</div></div>
+    <div class="metric"><div class="metric-label">Engaged sessions</div><div class="metric-value">${fmt(mv[4]?.value)}</div></div>`;
+  const rows=daily.rows||[];
+  const labels=rows.map(r=>{const d=r.dimensionValues[0].value;return d.slice(4,6)+'/'+d.slice(6);});
+  dc('dau');charts['dau']=new Chart(document.getElementById('dau-chart'),{type:'line',data:{labels,datasets:[
+    {label:'Active',data:rows.map(r=>parseInt(r.metricValues[0].value)),borderColor:'#378ADD',backgroundColor:'rgba(55,138,221,0.07)',fill:true,tension:0.4,pointRadius:0,borderWidth:2},
+    {label:'New',data:rows.map(r=>parseInt(r.metricValues[1].value)),borderColor:'#1D9E75',backgroundColor:'rgba(29,158,117,0.05)',fill:true,tension:0.4,pointRadius:0,borderWidth:1.5,borderDash:[4,3]}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}},y:{beginAtZero:false}}}});
+  const pRows=platform.rows||[];
+  dc('platform');charts['platform']=new Chart(document.getElementById('platform-chart'),{type:'doughnut',data:{labels:pRows.map(r=>r.dimensionValues[0].value||'Unknown'),datasets:[{data:pRows.map(r=>parseInt(r.metricValues[0].value)),backgroundColor:['#378ADD','#1D9E75','#EF9F27','#D4537E','#7F77DD'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11},boxWidth:11}}}}});
+  const sRows=screens.rows||[];
+  const maxV=parseInt(sRows[0]?.metricValues[0]?.value||1);
+  document.getElementById('screens-list').innerHTML=sRows.length?sRows.map(r=>{const name=fmtScreen(r.dimensionValues[0].value);const v=parseInt(r.metricValues[0].value);return`<li><span class="sname" title="${name}">${name}</span><div class="sbar-bg"><div class="sbar-fill" style="width:${Math.round(v/maxV*100)}%"></div></div><span class="scount">${fmt(v)}</span></li>`;}).join(''):'<li style="color:#666;font-size:13px">No data</li>';
+}
+
+async function loadAcquisition(){
+  const d=dr();
+  const[channels,countries]=await Promise.all([
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'sessionDefaultChannelGroup'}],metrics:[{name:'totalUsers'}],orderBys:[{metric:{metricName:'totalUsers'},desc:true}],limit:8}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'country'}],metrics:[{name:'totalUsers'}],orderBys:[{metric:{metricName:'totalUsers'},desc:true}],limit:10})
+  ]);
+  const cRows=channels.rows||[];
+  dc('acq');charts['acq']=new Chart(document.getElementById('acq-chart'),{type:'bar',data:{labels:cRows.map(r=>fmtChannel(r.dimensionValues[0].value)),datasets:[{label:'Users',data:cRows.map(r=>parseInt(r.metricValues[0].value)),backgroundColor:'#378ADD',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+  const coRows=countries.rows||[];
+  document.getElementById('country-wrap').style.height=(coRows.length*40+80)+'px';
+  dc('country');charts['country']=new Chart(document.getElementById('country-chart'),{type:'bar',data:{labels:coRows.map(r=>r.dimensionValues[0].value),datasets:[{label:'Users',data:coRows.map(r=>parseInt(r.metricValues[0].value)),backgroundColor:'#1D9E75',borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}});
+}
+
+async function loadEngagement(){
+  const d=dr();
+  const[metrics,daily]=await Promise.all([
+    ga4(':runReport',{dateRanges:[d],metrics:[{name:'averageSessionDuration'},{name:'bounceRate'},{name:'engagementRate'}]}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'date'}],metrics:[{name:'sessions'},{name:'engagedSessions'}],orderBys:[{dimension:{dimensionName:'date'}}]})
+  ]);
+  const mv=metrics.rows?.[0]?.metricValues||[];
+  document.getElementById('eng-metrics').innerHTML=`
+    <div class="metric"><div class="metric-label">Avg session duration</div><div class="metric-value">${fmtSec(parseFloat(mv[0]?.value||0))}</div></div>
+    <div class="metric"><div class="metric-label">Single Touch</div><div class="metric-value">${(parseFloat(mv[1]?.value||0)*100).toFixed(1)}%</div></div>
+    <div class="metric"><div class="metric-label">Engagement rate</div><div class="metric-value">${(parseFloat(mv[2]?.value||0)*100).toFixed(1)}%</div></div>`;
+  const dr2=daily.rows||[];
+  const labels=dr2.map(r=>{const d=r.dimensionValues[0].value;return d.slice(4,6)+'/'+d.slice(6);});
+  dc('sess');charts['sess']=new Chart(document.getElementById('sess-chart'),{type:'line',data:{labels,datasets:[{label:'Sessions',data:dr2.map(r=>parseInt(r.metricValues[0].value)),borderColor:'#7F77DD',backgroundColor:'rgba(127,119,221,0.07)',fill:true,tension:0.4,pointRadius:0,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}},y:{beginAtZero:false}}}});
+  dc('eng');charts['eng']=new Chart(document.getElementById('eng-chart'),{type:'bar',data:{labels,datasets:[
+    {label:'Engaged',data:dr2.map(r=>parseInt(r.metricValues[1].value)),backgroundColor:'#1D9E75',borderRadius:3,stack:'a'},
+    {label:'Single Touch',data:dr2.map(r=>Math.max(0,parseInt(r.metricValues[0].value)-parseInt(r.metricValues[1].value))),backgroundColor:'#E24B4A',borderRadius:3,stack:'a'}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{stacked:true,ticks:{maxTicksLimit:8}},y:{stacked:true,beginAtZero:true}}}});
+}
+
+async function loadEvents(){
+  const d=dr();
+  const[topEvts,evtTime]=await Promise.all([
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'eventName'}],metrics:[{name:'eventCount'}],orderBys:[{metric:{metricName:'eventCount'},desc:true}],limit:10}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'date'}],metrics:[{name:'eventCount'}],orderBys:[{dimension:{dimensionName:'date'}}]})
+  ]);
+  const eRows=topEvts.rows||[];
+  document.getElementById('events-wrap').style.height=(eRows.length*40+80)+'px';
+  dc('events');charts['events']=new Chart(document.getElementById('events-chart'),{type:'bar',data:{labels:eRows.map(r=>fmtEvent(r.dimensionValues[0].value)),datasets:[{label:'Count',data:eRows.map(r=>parseInt(r.metricValues[0].value)),backgroundColor:'#378ADD',borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}});
+  const etRows=evtTime.rows||[];
+  dc('evtTime');charts['evtTime']=new Chart(document.getElementById('evt-time-chart'),{type:'line',data:{labels:etRows.map(r=>{const d=r.dimensionValues[0].value;return d.slice(4,6)+'/'+d.slice(6);}),datasets:[{label:'Events',data:etRows.map(r=>parseInt(r.metricValues[0].value)),borderColor:'#D4537E',backgroundColor:'rgba(212,83,126,0.07)',fill:true,tension:0.4,pointRadius:0,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}},y:{beginAtZero:false}}}});
+}
+
+let activeTab='overview';
+async function loadTab(tab){
+  clearErr();
+  try{
+    if(tab==='overview')await loadOverview();
+    else if(tab==='acquisition')await loadAcquisition();
+    else if(tab==='engagement')await loadEngagement();
+    else if(tab==='events')await loadEvents();
+    setStatus('live');
+  }catch(e){setStatus('error');showErr(e.message);}
+}
+function setTab(tab,el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  ['overview','acquisition','engagement','events'].forEach(t=>{document.getElementById('tab-'+t).style.display=t===tab?'block':'none';});
+  activeTab=tab;loadTab(tab);
+}
+async function loadAll(){await loadTab(activeTab);}
+loadAll();
+</script>
+</body>
+</html>
 
