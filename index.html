@@ -1,1 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YKA Connect Analytical Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;color:#111;padding:1.5rem}
+.hbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem}
+h1{font-size:20px;font-weight:500}
+.live-badge{font-size:11px;padding:3px 9px;border-radius:20px;background:#EAF3DE;color:#3B6D11;font-weight:500;margin-left:8px}
+.err-badge{font-size:11px;padding:3px 9px;border-radius:20px;background:#FCEBEB;color:#A32D2D;font-weight:500;margin-left:8px}
+.warn-badge{font-size:11px;padding:3px 9px;border-radius:20px;background:#FAEEDA;color:#854F0B;font-weight:500;margin-left:8px}
+.controls{display:flex;gap:8px;align-items:center}
+select,button{font-size:13px;padding:6px 12px;border-radius:8px;border:1px solid #ddd;background:white;cursor:pointer}
+button{color:#378ADD}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:1.25rem}
+.metric{background:white;border-radius:8px;padding:.875rem;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+.metric-label{font-size:12px;color:#666;margin-bottom:5px}
+.metric-value{font-size:22px;font-weight:500}
+.card{background:white;border-radius:12px;padding:1.125rem;margin-bottom:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+.card-title{font-size:13px;font-weight:500;margin-bottom:1rem;color:#111}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem}
+.tab-bar{display:flex;gap:2px;margin-bottom:1.25rem;border-bottom:1px solid #e5e5e5}
+.tab{font-size:13px;padding:8px 16px;cursor:pointer;color:#666;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.active{color:#185FA5;border-bottom-color:#378ADD;font-weight:500}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid #eee;border-top-color:#378ADD;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error-box{background:#FCEBEB;color:#A32D2D;border-radius:8px;padding:12px 16px;font-size:13px;margin-bottom:1rem;line-height:1.6}
+.slist{list-style:none}
+.slist li{display:flex;align-items:center;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px;gap:8px}
+.slist li:last-child{border-bottom:none}
+.sname{flex:0 0 130px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.sbar-bg{flex:1;height:5px;background:#f0f0f0;border-radius:3px}
+.sbar-fill{height:100%;border-radius:3px;background:#378ADD}
+.scount{flex:0 0 50px;text-align:right;color:#666;font-size:12px}
+.legend{display:flex;gap:16px;margin-bottom:10px;font-size:12px;color:#666}
+.legend span{display:flex;align-items:center;gap:4px}
+.ldot{width:10px;height:10px;border-radius:2px;display:inline-block}
+</style>
+</head>
+<body>
+
+<div class="hbar">
+  <div style="display:flex;align-items:center">
+    <h1>YKA Connect Analytical Dashboard</h1>
+    <span id="status-badge" class="warn-badge">● connecting</span>
+  </div>
+  <div class="controls">
+    <select id="date-range" onchange="handleRangeChange()">
+      <option value="7" selected>Last 7 days</option>
+      <option value="28">Last 28 days</option>
+      <option value="90">Last 90 days</option>
+      <option value="custom">Custom range</option>
+    </select>
+    <div id="custom-range" style="display:none;gap:6px;align-items:center;font-size:13px;">
+      <input type="date" id="start-date" style="padding:4px 8px;border-radius:8px;border:1px solid #ddd;font-size:12px;">
+      <span style="color:#666">to</span>
+      <input type="date" id="end-date" style="padding:4px 8px;border-radius:8px;border:1px solid #ddd;font-size:12px;">
+      <button onclick="loadAll()" style="padding:4px 10px;background:#378ADD;color:white;border:none;border-radius:8px;font-size:12px;cursor:pointer;">Apply</button>
+    </div>
+    <button onclick="loadAll()">↻ Refresh</button>
+    <!-- Export dropdown -->
+    <div style="position:relative;display:inline-block;" id="export-wrap">
+      <button onclick="toggleExport()" style="padding:6px 12px;background:#1D9E75;color:white;border:none;border-radius:8px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:4px;">⬇ Export ▾</button>
+      <div id="export-menu" style="display:none;position:absolute;right:0;top:110%;background:white;border:1px solid #ddd;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.12);z-index:999;min-width:220px;overflow:hidden;">
+        <div onclick="exportChartsPPT()" style="padding:10px 16px;cursor:pointer;font-size:13px;color:#111;border-bottom:1px solid #f0f0f0;" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='white'">📊 Export dashboard as PPT</div>
+        <div onclick="exportChartsExcel()" style="padding:10px 16px;cursor:pointer;font-size:13px;color:#111;border-bottom:1px solid #f0f0f0;" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='white'">📈 Export charts as Excel</div>
+        <div onclick="exportRawData()" style="padding:10px 16px;cursor:pointer;font-size:13px;color:#111;" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='white'">📋 Export raw data as Excel</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="error-area"></div>
+
+<div class="tab-bar">
+  <div class="tab active" onclick="setTab('overview',this)">Overview</div>
+  <div class="tab" onclick="setTab('acquisition',this)">Acquisition</div>
+  <div class="tab" onclick="setTab('engagement',this)">Engagement</div>
+  <div class="tab" onclick="setTab('events',this)">Events</div>
+</div>
+
+<div id="tab-overview">
+  <div class="metric-grid" id="overview-metrics">
+    <div class="metric"><div class="metric-label">Total users</div><div class="metric-value"><span class="spinner"></span></div></div>
+    <div class="metric"><div class="metric-label">New users</div><div class="metric-value">—</div></div>
+    <div class="metric"><div class="metric-label">Sessions</div><div class="metric-value">—</div></div>
+    <div class="metric"><div class="metric-label">Avg session</div><div class="metric-value">—</div></div>
+    <div class="metric"><div class="metric-label">Engaged sessions</div><div class="metric-value">—</div></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Daily active users</div>
+    <div class="legend"><span><span class="ldot" style="background:#378ADD"></span>Active users</span><span><span class="ldot" style="background:#1D9E75"></span>New users</span></div>
+    <div style="position:relative;height:200px"><canvas id="dau-chart"></canvas></div>
+  </div>
+  <div class="grid2">
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title">Platform breakdown</div>
+      <div style="position:relative;height:180px"><canvas id="platform-chart"></canvas></div>
+    </div>
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title">Top screens</div>
+      <ul class="slist" id="screens-list"><li style="color:#666;font-size:13px"><span class="spinner"></span>loading...</li></ul>
+    </div>
+  </div>
+</div>
+
+<div id="tab-acquisition" style="display:none">
+  <div class="card"><div class="card-title">Users by channel</div><div style="position:relative;height:260px"><canvas id="acq-chart"></canvas></div></div>
+  <div class="card"><div class="card-title">Users by country (top 10)</div><div id="country-wrap" style="position:relative;height:300px"><canvas id="country-chart"></canvas></div></div>
+</div>
+
+<div id="tab-engagement" style="display:none">
+  <div class="metric-grid" id="eng-metrics">
+    <div class="metric"><div class="metric-label">Avg session duration</div><div class="metric-value"><span class="spinner"></span></div></div>
+    <div class="metric"><div class="metric-label">Single Touch</div><div class="metric-value">—</div></div>
+    <div class="metric"><div class="metric-label">Engagement rate</div><div class="metric-value">—</div></div>
+  </div>
+  <div class="card"><div class="card-title">Sessions over time</div><div style="position:relative;height:200px"><canvas id="sess-chart"></canvas></div></div>
+  <div class="card">
+    <div class="card-title">Engaged vs single touch sessions</div>
+    <div class="legend"><span><span class="ldot" style="background:#1D9E75"></span>Engaged</span><span><span class="ldot" style="background:#E24B4A"></span>Single Touch</span></div>
+    <div style="position:relative;height:180px"><canvas id="eng-chart"></canvas></div>
+  </div>
+</div>
+
+<div id="tab-events" style="display:none">
+  <div class="card"><div class="card-title">Top events by count</div><div id="events-wrap" style="position:relative;height:320px"><canvas id="events-chart"></canvas></div></div>
+  <div class="card"><div class="card-title">Event counts over time</div><div style="position:relative;height:200px"><canvas id="evt-time-chart"></canvas></div></div>
+</div>
+
+<script>
+const WEBHOOK='https://ykai.app.n8n.cloud/webhook/ga4-proxy-v2';
+let charts={};
+
+// Preload export libraries in background
+(function preloadLibs(){
+  function loadScript(urls){
+    const tryNext=(i)=>{
+      if(i>=urls.length)return;
+      const s=document.createElement('script');
+      s.src=urls[i];
+      s.onerror=()=>tryNext(i+1);
+      document.head.appendChild(s);
+    };
+    tryNext(0);
+  }
+  loadScript(['https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js','https://unpkg.com/pptxgenjs@3.12.0/dist/pptxgen.bundle.js']);
+  loadScript(['https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js','https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js']);
+})();
+function days(){return parseInt(document.getElementById('date-range').value);}
+function dr(){
+  const sel=document.getElementById('date-range').value;
+  if(sel==='custom'){
+    const s=document.getElementById('start-date').value;
+    const e=document.getElementById('end-date').value;
+    if(s&&e) return{startDate:s,endDate:e};
+  }
+  return{startDate:days()+'daysAgo',endDate:'today'};
+}
+function handleRangeChange(){
+  const sel=document.getElementById('date-range').value;
+  const customDiv=document.getElementById('custom-range');
+  if(sel==='custom'){
+    customDiv.style.display='flex';
+    const today=new Date();
+    const todayStr=today.toISOString().split('T')[0];
+    const week=new Date();week.setDate(today.getDate()-7);
+    const endEl=document.getElementById('end-date');
+    const startEl=document.getElementById('start-date');
+    endEl.max=todayStr;
+    endEl.value=todayStr;
+    startEl.max=todayStr;
+    startEl.value=week.toISOString().split('T')[0];
+    // prevent end-date going beyond today on change
+    endEl.onchange=()=>{ if(endEl.value>todayStr) endEl.value=todayStr; };
+    startEl.onchange=()=>{ if(startEl.value>endEl.value) startEl.value=endEl.value; };
+  } else {
+    customDiv.style.display='none';
+    loadAll();
+  }
+}
+
+// ── Export helpers ──────────────────────────────────────────────
+function toggleExport(){
+  const m=document.getElementById('export-menu');
+  m.style.display=m.style.display==='none'?'block':'none';
+}
+document.addEventListener('click',e=>{
+  const wrap=document.getElementById('export-wrap');
+  if(wrap&&!wrap.contains(e.target)) document.getElementById('export-menu').style.display='none';
+});
+
+// Global store for raw data collected during loadAll
+window._rawData={};
+
+// ── PPT export — loads all tabs, captures canvases, builds PPTX ──
+async function exportChartsPPT(){
+  document.getElementById('export-menu').style.display='none';
+
+  // Show loading indicator
+  const btn=document.querySelector('[onclick="exportChartsPPT()"]');
+  const origText=btn.textContent;
+  btn.textContent='⏳ Building PPT...';
+
+  try{
+    // Load PptxGenJS with fallback CDNs
+    if(typeof PptxGenJS==='undefined'){
+      const cdns=[
+        'https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js',
+        'https://unpkg.com/pptxgenjs@3.12.0/dist/pptxgen.bundle.js',
+        'https://cdnjs.cloudflare.com/ajax/libs/PptxGenJS/3.12.0/pptxgen.bundled.js',
+      ];
+      let loaded=false;
+      for(const url of cdns){
+        try{
+          await new Promise((res,rej)=>{
+            const s=document.createElement('script');
+            s.src=url;
+            s.onload=()=>{loaded=true;res();};
+            s.onerror=rej;
+            document.head.appendChild(s);
+          });
+          if(loaded) break;
+        }catch(e){}
+      }
+      if(typeof PptxGenJS==='undefined') throw new Error('Could not load PptxGenJS from any CDN. Try opening the dashboard from a web server (Netlify/GitHub Pages) instead of a local file.');
+    }
+
+    // Ensure all tabs have loaded data by visiting each
+    const tabOrder=['overview','acquisition','engagement','events'];
+    const tabEls=document.querySelectorAll('.tab');
+    for(let i=0;i<tabOrder.length;i++){
+      ['overview','acquisition','engagement','events'].forEach(t=>document.getElementById('tab-'+t).style.display='none');
+      document.getElementById('tab-'+tabOrder[i]).style.display='block';
+      if(!window._rawData[tabOrder[i]]){
+        try{
+          if(tabOrder[i]==='overview') await loadOverview();
+          else if(tabOrder[i]==='acquisition') await loadAcquisition();
+          else if(tabOrder[i]==='engagement') await loadEngagement();
+          else if(tabOrder[i]==='events') await loadEvents();
+        }catch(e){}
+      }
+      await new Promise(r=>setTimeout(r,200));
+    }
+    // Restore active tab
+    ['overview','acquisition','engagement','events'].forEach(t=>document.getElementById('tab-'+t).style.display='none');
+    document.getElementById('tab-'+activeTab).style.display='block';
+
+    // Helper: safely get canvas data URL
+    function canvasData(id){
+      try{
+        const c=document.getElementById(id);
+        return c?c.toDataURL('image/png',1.0):null;
+      }catch(e){return null;}
+    }
+
+    // Build composite image for each tab using offscreen canvas
+    function buildTabImage(chartIds,w=1200,h=600){
+      const oc=document.createElement('canvas');
+      oc.width=w; oc.height=h;
+      const ctx=oc.getContext('2d');
+      ctx.fillStyle='#f8f9fa'; ctx.fillRect(0,0,w,h);
+      const imgs=chartIds.map(id=>({id,data:canvasData(id)})).filter(x=>x.data);
+      const cols=imgs.length<=2?imgs.length:2;
+      const rows=Math.ceil(imgs.length/cols);
+      const cw=Math.floor(w/cols)-20;
+      const ch=Math.floor(h/rows)-20;
+      return new Promise(resolve=>{
+        if(!imgs.length){resolve(oc.toDataURL());return;}
+        let loaded=0;
+        imgs.forEach((item,i)=>{
+          const img=new Image();
+          img.onload=()=>{
+            const col=i%cols, row=Math.floor(i/cols);
+            const x=col*(cw+20)+10, y=row*(ch+20)+10;
+            ctx.fillStyle='#ffffff';
+            ctx.roundRect?ctx.roundRect(x,y,cw,ch,8):ctx.fillRect(x,y,cw,ch);
+            ctx.fill();
+            const scale=Math.min(cw/img.width,ch/img.height);
+            const dw=img.width*scale, dh=img.height*scale;
+            ctx.drawImage(img,x+(cw-dw)/2,y+(ch-dh)/2,dw,dh);
+            loaded++;
+            if(loaded===imgs.length) resolve(oc.toDataURL('image/png'));
+          };
+          img.onerror=()=>{loaded++;if(loaded===imgs.length)resolve(oc.toDataURL('image/png'));};
+          img.src=item.data;
+        });
+      });
+    }
+
+    const pptx=new PptxGenJS();
+    pptx.layout='LAYOUT_WIDE';
+
+    const rd=window._rawData;
+    const slides=[
+      {title:'Overview',charts:['dau-chart','platform-chart'],tab:'overview'},
+      {title:'Acquisition',charts:['acq-chart','country-chart'],tab:'acquisition'},
+      {title:'Engagement',charts:['sess-chart','eng-chart'],tab:'engagement'},
+      {title:'Events',charts:['events-chart','evt-time-chart'],tab:'events'},
+    ];
+
+    for(const sl of slides){
+      const slide=pptx.addSlide();
+      slide.background={color:'FFFFFF'};
+
+      // Header bar
+      slide.addShape('rect',{x:0,y:0,w:13.33,h:0.6,fill:{color:'134781'},line:{color:'134781'}});
+      slide.addText('YKA Connect Analytical Dashboard',{x:0.3,y:0.05,w:10,h:0.5,color:'FFFFFF',fontSize:12});
+      slide.addText(new Date().toLocaleDateString(),{x:10.5,y:0.05,w:2.5,h:0.5,color:'FFFFFF',fontSize:10,align:'right'});
+
+      // Slide title
+      slide.addText(sl.title,{x:0.3,y:0.7,w:12.7,h:0.5,fontSize:20,bold:true,color:'134781'});
+
+      // Metric row for overview
+      if(sl.tab==='overview'){
+        const mv=rd.overview?.summary?.rows?.[0]?.metricValues||[];
+        const mdata=[['Total Users',fmt(mv[0]?.value)],['New Users',fmt(mv[1]?.value)],['Sessions',fmt(mv[2]?.value)],['Avg Session',fmtSec(parseFloat(mv[3]?.value||0))],['Engaged',fmt(mv[4]?.value)]];
+        mdata.forEach((m,i)=>{
+          const x=0.3+i*2.54;
+          slide.addShape('rect',{x,y:1.3,w:2.4,h:0.8,fill:{color:'EBF3FB'},line:{color:'BDD9F2'}});
+          slide.addText(m[0],{x,y:1.33,w:2.4,h:0.28,fontSize:9,color:'555555',align:'center'});
+          slide.addText(m[1],{x,y:1.6,w:2.4,h:0.45,fontSize:16,bold:true,color:'134781',align:'center'});
+        });
+      }
+
+      // Chart composite image
+      const yOffset=sl.tab==='overview'?2.2:1.3;
+      const imgData=await buildTabImage(sl.charts,1300,sl.tab==='overview'?480:580);
+      slide.addImage({data:imgData,x:0.2,y:yOffset,w:12.9,h:sl.tab==='overview'?4.8:5.8});
+    }
+
+    await pptx.writeFile({fileName:'YKA_Connect_Dashboard.pptx'});
+    btn.textContent='✅ PPT Downloaded!';
+    setTimeout(()=>btn.textContent=origText,3000);
+
+  }catch(e){
+    btn.textContent='❌ Export failed';
+    setTimeout(()=>btn.textContent=origText,3000);
+    alert('PPT export error: '+e.message);
+  }
+}
+
+// ── Charts Excel export ─────────────────────────────────────────
+async function exportChartsExcel(){
+  document.getElementById('export-menu').style.display='none';
+  if(typeof XLSX==='undefined'){
+    const cdns=['https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js','https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js','https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'];
+    for(const url of cdns){try{await new Promise((res,rej)=>{const s=document.createElement('script');s.src=url;s.onload=res;s.onerror=rej;document.head.appendChild(s);});if(typeof XLSX!=='undefined')break;}catch(e){}}
+    if(typeof XLSX==='undefined') throw new Error('Could not load XLSX library. Try from Netlify/GitHub Pages.');
+  }
+  const wb=XLSX.utils.book_new();
+  const rd=window._rawData;
+
+  if(rd.overview){
+    const mv=rd.overview.summary?.rows?.[0]?.metricValues||[];
+    const ws=XLSX.utils.aoa_to_sheet([
+      ['Metric','Value'],
+      ['Total Users',mv[0]?.value||0],
+      ['New Users',mv[1]?.value||0],
+      ['Sessions',mv[2]?.value||0],
+      ['Avg Session Duration (s)',mv[3]?.value||0],
+      ['Engaged Sessions',mv[4]?.value||0],
+    ]);
+    XLSX.utils.book_append_sheet(wb,ws,'Overview');
+
+    if(rd.overview.daily?.rows){
+      const rows=rd.overview.daily.rows;
+      const dws=XLSX.utils.aoa_to_sheet([
+        ['Date','Active Users','New Users'],
+        ...rows.map(r=>[r.dimensionValues[0].value,parseInt(r.metricValues[0].value),parseInt(r.metricValues[1].value)])
+      ]);
+      XLSX.utils.book_append_sheet(wb,dws,'Daily Users');
+    }
+    if(rd.overview.screens?.rows){
+      const sws=XLSX.utils.aoa_to_sheet([
+        ['Screen','Page Views'],
+        ...rd.overview.screens.rows.map(r=>[fmtScreen(r.dimensionValues[0].value),parseInt(r.metricValues[0].value)])
+      ]);
+      XLSX.utils.book_append_sheet(wb,sws,'Top Screens');
+    }
+  }
+  if(rd.acquisition){
+    if(rd.acquisition.channels?.rows){
+      const cws=XLSX.utils.aoa_to_sheet([
+        ['Channel','Users'],
+        ...rd.acquisition.channels.rows.map(r=>[fmtChannel(r.dimensionValues[0].value),parseInt(r.metricValues[0].value)])
+      ]);
+      XLSX.utils.book_append_sheet(wb,cws,'Acquisition Channels');
+    }
+    if(rd.acquisition.countries?.rows){
+      const ctws=XLSX.utils.aoa_to_sheet([
+        ['Country','Users'],
+        ...rd.acquisition.countries.rows.map(r=>[r.dimensionValues[0].value,parseInt(r.metricValues[0].value)])
+      ]);
+      XLSX.utils.book_append_sheet(wb,ctws,'Countries');
+    }
+  }
+  if(rd.engagement){
+    if(rd.engagement.daily?.rows){
+      const ews=XLSX.utils.aoa_to_sheet([
+        ['Date','Sessions','Engaged Sessions'],
+        ...rd.engagement.daily.rows.map(r=>[r.dimensionValues[0].value,parseInt(r.metricValues[0].value),parseInt(r.metricValues[1].value)])
+      ]);
+      XLSX.utils.book_append_sheet(wb,ews,'Engagement Daily');
+    }
+  }
+  if(rd.events){
+    if(rd.events.top?.rows){
+      const evws=XLSX.utils.aoa_to_sheet([
+        ['Event','Count'],
+        ...rd.events.top.rows.map(r=>[fmtEvent(r.dimensionValues[0].value),parseInt(r.metricValues[0].value)])
+      ]);
+      XLSX.utils.book_append_sheet(wb,evws,'Top Events');
+    }
+  }
+  XLSX.writeFile(wb,'YKA_Connect_Charts.xlsx');
+}
+
+// ── Raw data Excel export ───────────────────────────────────────
+async function exportRawData(){
+  document.getElementById('export-menu').style.display='none';
+  if(typeof XLSX==='undefined'){
+    const cdns=['https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js','https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js','https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'];
+    for(const url of cdns){try{await new Promise((res,rej)=>{const s=document.createElement('script');s.src=url;s.onload=res;s.onerror=rej;document.head.appendChild(s);});if(typeof XLSX!=='undefined')break;}catch(e){}}
+    if(typeof XLSX==='undefined') throw new Error('Could not load XLSX library. Try from Netlify/GitHub Pages.');
+  }
+
+  // Fetch all raw data fresh
+  const d=dr();
+  const [summary,daily,platform,screens,channels,countries,engMetrics,engDaily,topEvts,evtTime]=await Promise.all([
+    ga4(':runReport',{dateRanges:[d],metrics:[{name:'totalUsers'},{name:'newUsers'},{name:'sessions'},{name:'averageSessionDuration'},{name:'engagedSessions'}]}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'date'}],metrics:[{name:'activeUsers'},{name:'newUsers'}],orderBys:[{dimension:{dimensionName:'date'}}]}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'platform'}],metrics:[{name:'totalUsers'}],orderBys:[{metric:{metricName:'totalUsers'},desc:true}]}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'unifiedScreenName'}],metrics:[{name:'screenPageViews'}],orderBys:[{metric:{metricName:'screenPageViews'},desc:true}],limit:20}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'sessionDefaultChannelGroup'}],metrics:[{name:'totalUsers'}],orderBys:[{metric:{metricName:'totalUsers'},desc:true}]}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'country'}],metrics:[{name:'totalUsers'}],orderBys:[{metric:{metricName:'totalUsers'},desc:true}],limit:20}),
+    ga4(':runReport',{dateRanges:[d],metrics:[{name:'averageSessionDuration'},{name:'bounceRate'},{name:'engagementRate'}]}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'date'}],metrics:[{name:'sessions'},{name:'engagedSessions'}],orderBys:[{dimension:{dimensionName:'date'}}]}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'eventName'}],metrics:[{name:'eventCount'}],orderBys:[{metric:{metricName:'eventCount'},desc:true}],limit:50}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'date'}],metrics:[{name:'eventCount'}],orderBys:[{dimension:{dimensionName:'date'}}]}),
+  ]);
+
+  const wb=XLSX.utils.book_new();
+  const mv=summary.rows?.[0]?.metricValues||[];
+  const emv=engMetrics.rows?.[0]?.metricValues||[];
+
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+    ['Metric','Value'],
+    ['Total Users',mv[0]?.value||0],['New Users',mv[1]?.value||0],['Sessions',mv[2]?.value||0],
+    ['Avg Session Duration (s)',parseFloat(mv[3]?.value||0).toFixed(1)],['Engaged Sessions',mv[4]?.value||0],
+    ['Bounce Rate %',(parseFloat(emv[1]?.value||0)*100).toFixed(1)],['Engagement Rate %',(parseFloat(emv[2]?.value||0)*100).toFixed(1)],
+  ]),'Summary');
+
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Date','Active Users','New Users'],...(daily.rows||[]).map(r=>[r.dimensionValues[0].value,r.metricValues[0].value,r.metricValues[1].value])]),'Daily Users');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Platform','Users'],...(platform.rows||[]).map(r=>[r.dimensionValues[0].value,r.metricValues[0].value])]),'Platform');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Screen','Page Views'],...(screens.rows||[]).map(r=>[fmtScreen(r.dimensionValues[0].value),r.metricValues[0].value])]),'Screens');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Channel','Users'],...(channels.rows||[]).map(r=>[fmtChannel(r.dimensionValues[0].value),r.metricValues[0].value])]),'Channels');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Country','Users'],...(countries.rows||[]).map(r=>[r.dimensionValues[0].value,r.metricValues[0].value])]),'Countries');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Date','Sessions','Engaged Sessions'],...(engDaily.rows||[]).map(r=>[r.dimensionValues[0].value,r.metricValues[0].value,r.metricValues[1].value])]),'Engagement Daily');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Event','Count'],...(topEvts.rows||[]).map(r=>[fmtEvent(r.dimensionValues[0].value),r.metricValues[0].value])]),'Events');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Date','Event Count'],...(evtTime.rows||[]).map(r=>[r.dimensionValues[0].value,r.metricValues[0].value])]),'Events Daily');
+  XLSX.writeFile(wb,'YKA_Connect_RawData.xlsx');
+}
+async function ga4(endpoint,payload){
+  const r=await fetch(WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint,payload})});
+  if(!r.ok){const e=await r.text();throw new Error(e||'HTTP '+r.status);}
+  const data=await r.json();
+  if(data.error)throw new Error(data.error.message||JSON.stringify(data.error));
+  return data;
+}
+function fmt(n){return Math.round(parseFloat(n||0)).toLocaleString();}
+function fmtChannel(name){
+  if(!name || name==='(not set)') return 'Unknown';
+  if(name==='Unassigned') return 'Message Link';
+  return name;
+}
+function fmtScreen(name){
+  if(!name || name==='(not set)' || name.trim()==='') return 'Screen View';
+  return name.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()).trim();
+}
+function fmtEvent(name){
+  if(!name || name==='(not set)') return 'Screen View';
+  return name.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+}
+function fmtSec(s){const m=Math.floor(s/60),sec=Math.round(s%60);return m+'m '+sec+'s';}
+function dc(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
+function setStatus(s){
+  const b=document.getElementById('status-badge');
+  b.className=s==='live'?'live-badge':s==='error'?'err-badge':'warn-badge';
+  b.textContent=s==='live'?'● live':s==='error'?'● error':'● '+s;
+}
+function showErr(msg){document.getElementById('error-area').innerHTML='<div class="error-box"><strong>Error:</strong> '+msg+'</div>';}
+function clearErr(){document.getElementById('error-area').innerHTML='';}
+
+async function loadOverview(){
+  const d=dr();
+  const[summary,daily,platform,screens]=await Promise.all([
+    ga4(':runReport',{dateRanges:[d],metrics:[{name:'totalUsers'},{name:'newUsers'},{name:'sessions'},{name:'averageSessionDuration'},{name:'engagedSessions'}]}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'date'}],metrics:[{name:'activeUsers'},{name:'newUsers'}],orderBys:[{dimension:{dimensionName:'date'}}]}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'platform'}],metrics:[{name:'totalUsers'}],orderBys:[{metric:{metricName:'totalUsers'},desc:true}]}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'unifiedScreenName'}],metrics:[{name:'screenPageViews'}],orderBys:[{metric:{metricName:'screenPageViews'},desc:true}],limit:8})
+  ]);
+  window._rawData.overview={summary,daily,platform,screens};
+  const mv=summary.rows?.[0]?.metricValues||[];
+  document.getElementById('overview-metrics').innerHTML=`
+    <div class="metric"><div class="metric-label">Total users</div><div class="metric-value">${fmt(mv[0]?.value)}</div></div>
+    <div class="metric"><div class="metric-label">New users</div><div class="metric-value">${fmt(mv[1]?.value)}</div></div>
+    <div class="metric"><div class="metric-label">Sessions</div><div class="metric-value">${fmt(mv[2]?.value)}</div></div>
+    <div class="metric"><div class="metric-label">Avg session</div><div class="metric-value">${fmtSec(parseFloat(mv[3]?.value||0))}</div></div>
+    <div class="metric"><div class="metric-label">Engaged sessions</div><div class="metric-value">${fmt(mv[4]?.value)}</div></div>`;
+  const rows=daily.rows||[];
+  const labels=rows.map(r=>{const d=r.dimensionValues[0].value;return d.slice(4,6)+'/'+d.slice(6);});
+  dc('dau');charts['dau']=new Chart(document.getElementById('dau-chart'),{type:'line',data:{labels,datasets:[
+    {label:'Active',data:rows.map(r=>parseInt(r.metricValues[0].value)),borderColor:'#378ADD',backgroundColor:'rgba(55,138,221,0.07)',fill:true,tension:0.4,pointRadius:0,borderWidth:2},
+    {label:'New',data:rows.map(r=>parseInt(r.metricValues[1].value)),borderColor:'#1D9E75',backgroundColor:'rgba(29,158,117,0.05)',fill:true,tension:0.4,pointRadius:0,borderWidth:1.5,borderDash:[4,3]}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}},y:{beginAtZero:false}}}});
+  const pRows=platform.rows||[];
+  dc('platform');charts['platform']=new Chart(document.getElementById('platform-chart'),{type:'doughnut',data:{labels:pRows.map(r=>r.dimensionValues[0].value||'Unknown'),datasets:[{data:pRows.map(r=>parseInt(r.metricValues[0].value)),backgroundColor:['#378ADD','#1D9E75','#EF9F27','#D4537E','#7F77DD'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11},boxWidth:11}}}}});
+  const sRows=screens.rows||[];
+  const maxV=parseInt(sRows[0]?.metricValues[0]?.value||1);
+  document.getElementById('screens-list').innerHTML=sRows.length?sRows.map(r=>{const name=fmtScreen(r.dimensionValues[0].value);const v=parseInt(r.metricValues[0].value);return`<li><span class="sname" title="${name}">${name}</span><div class="sbar-bg"><div class="sbar-fill" style="width:${Math.round(v/maxV*100)}%"></div></div><span class="scount">${fmt(v)}</span></li>`;}).join(''):'<li style="color:#666;font-size:13px">No data</li>';
+}
+
+async function loadAcquisition(){
+  const d=dr();
+  const[channels,countries]=await Promise.all([
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'sessionDefaultChannelGroup'}],metrics:[{name:'totalUsers'}],orderBys:[{metric:{metricName:'totalUsers'},desc:true}],limit:8}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'country'}],metrics:[{name:'totalUsers'}],orderBys:[{metric:{metricName:'totalUsers'},desc:true}],limit:10})
+  ]);
+  window._rawData.acquisition={channels,countries};
+  const cRows=channels.rows||[];
+  dc('acq');charts['acq']=new Chart(document.getElementById('acq-chart'),{type:'bar',data:{labels:cRows.map(r=>fmtChannel(r.dimensionValues[0].value)),datasets:[{label:'Users',data:cRows.map(r=>parseInt(r.metricValues[0].value)),backgroundColor:'#378ADD',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+  const coRows=countries.rows||[];
+  document.getElementById('country-wrap').style.height=(coRows.length*40+80)+'px';
+  dc('country');charts['country']=new Chart(document.getElementById('country-chart'),{type:'bar',data:{labels:coRows.map(r=>r.dimensionValues[0].value),datasets:[{label:'Users',data:coRows.map(r=>parseInt(r.metricValues[0].value)),backgroundColor:'#1D9E75',borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}});
+}
+
+async function loadEngagement(){
+  const d=dr();
+  const[metrics,daily]=await Promise.all([
+    ga4(':runReport',{dateRanges:[d],metrics:[{name:'averageSessionDuration'},{name:'bounceRate'},{name:'engagementRate'}]}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'date'}],metrics:[{name:'sessions'},{name:'engagedSessions'}],orderBys:[{dimension:{dimensionName:'date'}}]})
+  ]);
+  window._rawData.engagement={metrics,daily};
+  const mv=metrics.rows?.[0]?.metricValues||[];
+  document.getElementById('eng-metrics').innerHTML=`
+    <div class="metric"><div class="metric-label">Avg session duration</div><div class="metric-value">${fmtSec(parseFloat(mv[0]?.value||0))}</div></div>
+    <div class="metric"><div class="metric-label">Single Touch</div><div class="metric-value">${(parseFloat(mv[1]?.value||0)*100).toFixed(1)}%</div></div>
+    <div class="metric"><div class="metric-label">Engagement rate</div><div class="metric-value">${(parseFloat(mv[2]?.value||0)*100).toFixed(1)}%</div></div>`;
+  const dr2=daily.rows||[];
+  const labels=dr2.map(r=>{const d=r.dimensionValues[0].value;return d.slice(4,6)+'/'+d.slice(6);});
+  dc('sess');charts['sess']=new Chart(document.getElementById('sess-chart'),{type:'line',data:{labels,datasets:[{label:'Sessions',data:dr2.map(r=>parseInt(r.metricValues[0].value)),borderColor:'#7F77DD',backgroundColor:'rgba(127,119,221,0.07)',fill:true,tension:0.4,pointRadius:0,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}},y:{beginAtZero:false}}}});
+  dc('eng');charts['eng']=new Chart(document.getElementById('eng-chart'),{type:'bar',data:{labels,datasets:[
+    {label:'Engaged',data:dr2.map(r=>parseInt(r.metricValues[1].value)),backgroundColor:'#1D9E75',borderRadius:3,stack:'a'},
+    {label:'Single Touch',data:dr2.map(r=>Math.max(0,parseInt(r.metricValues[0].value)-parseInt(r.metricValues[1].value))),backgroundColor:'#E24B4A',borderRadius:3,stack:'a'}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{stacked:true,ticks:{maxTicksLimit:8}},y:{stacked:true,beginAtZero:true}}}});
+}
+
+async function loadEvents(){
+  const d=dr();
+  const[topEvts,evtTime]=await Promise.all([
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'eventName'}],metrics:[{name:'eventCount'}],orderBys:[{metric:{metricName:'eventCount'},desc:true}],limit:10}),
+    ga4(':runReport',{dateRanges:[d],dimensions:[{name:'date'}],metrics:[{name:'eventCount'}],orderBys:[{dimension:{dimensionName:'date'}}]})
+  ]);
+  window._rawData.events={top:topEvts,time:evtTime};
+  const eRows=topEvts.rows||[];
+  document.getElementById('events-wrap').style.height=(eRows.length*40+80)+'px';
+  dc('events');charts['events']=new Chart(document.getElementById('events-chart'),{type:'bar',data:{labels:eRows.map(r=>fmtEvent(r.dimensionValues[0].value)),datasets:[{label:'Count',data:eRows.map(r=>parseInt(r.metricValues[0].value)),backgroundColor:'#378ADD',borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}});
+  const etRows=evtTime.rows||[];
+  dc('evtTime');charts['evtTime']=new Chart(document.getElementById('evt-time-chart'),{type:'line',data:{labels:etRows.map(r=>{const d=r.dimensionValues[0].value;return d.slice(4,6)+'/'+d.slice(6);}),datasets:[{label:'Events',data:etRows.map(r=>parseInt(r.metricValues[0].value)),borderColor:'#D4537E',backgroundColor:'rgba(212,83,126,0.07)',fill:true,tension:0.4,pointRadius:0,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}},y:{beginAtZero:false}}}});
+}
+
+let activeTab='overview';
+async function loadTab(tab){
+  clearErr();
+  try{
+    if(tab==='overview')await loadOverview();
+    else if(tab==='acquisition')await loadAcquisition();
+    else if(tab==='engagement')await loadEngagement();
+    else if(tab==='events')await loadEvents();
+    setStatus('live');
+  }catch(e){setStatus('error');showErr(e.message);}
+}
+function setTab(tab,el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  ['overview','acquisition','engagement','events'].forEach(t=>{document.getElementById('tab-'+t).style.display=t===tab?'block':'none';});
+  activeTab=tab;loadTab(tab);
+}
+async function loadAll(){await loadTab(activeTab);}
+loadAll();
+</script>
+</body>
+</html>
 
